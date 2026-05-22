@@ -13,12 +13,8 @@ DESTINATION  = "DPS"
 CURRENCY     = "AUD"
 ADULTS       = 2
 CABIN        = "ECONOMY"
+TOTAL_PAX    = 3   # 2 adults + 1 child
 CSV_FILE     = "flight_log.csv"
-
-# Note: Apify actor handles children differently — we'll track 2 adults
-# and note the child separately since the API uses adults count only
-# Total pax for per-person calc = 3
-TOTAL_PAX    = 3
 
 OUTBOUND_DATES = [
     "2027-04-03",
@@ -28,12 +24,11 @@ OUTBOUND_DATES = [
 RETURN_DATE = "2027-04-24"
 
 ALERT_THRESHOLD_PP = 450   # AUD per person
-
 DELAY_BETWEEN_CALLS = 5    # seconds between actor runs
 
-# ── CSV helpers ───────────────────────────────────────────────────────────────
+# ── CSV ───────────────────────────────────────────────────────────────────────
 FIELDNAMES = ["timestamp", "outbound", "return", "total_aud", "per_person_aud",
-              "best_price", "cheapest_source", "alert"]
+              "best_price_raw", "cheapest_source", "alert"]
 
 def append_rows(rows):
     file_exists = os.path.exists(CSV_FILE)
@@ -43,11 +38,10 @@ def append_rows(rows):
             writer.writeheader()
         writer.writerows(rows)
 
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    now     = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-    client  = ApifyClient(APIFY_TOKEN)
+    now    = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    client = ApifyClient(APIFY_TOKEN)
     new_rows = []
     alerts   = []
 
@@ -69,8 +63,9 @@ def main():
         }
 
         try:
-            run = client.actor(ACTOR_ID).call(run_input=run_input)
-items = list(client.dataset(run.default_dataset_id).iterate_items())        except Exception as e:
+            run    = client.actor(ACTOR_ID).call(run_input=run_input)
+            items  = list(client.dataset(run.default_dataset_id).iterate_items())
+        except Exception as e:
             print(f"error — {e}")
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
@@ -80,8 +75,7 @@ items = list(client.dataset(run.default_dataset_id).iterate_items())        exce
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
 
-        # Find cheapest flight across all results
-        cheapest = min(items, key=lambda x: x.get("bestPrice", float("inf")))
+        cheapest        = min(items, key=lambda x: x.get("bestPrice", float("inf")))
         best_price      = cheapest.get("bestPrice")
         cheapest_source = cheapest.get("cheapestSource", "unknown")
 
@@ -90,14 +84,10 @@ items = list(client.dataset(run.default_dataset_id).iterate_items())        exce
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
 
-        # bestPrice is for ADULTS only — scale to total pax
-        per_person = round(best_price / ADULTS * TOTAL_PAX / TOTAL_PAX, 2)
-        # Actually bestPrice is per-person already on some sources, let's store raw + per_pax
-        total      = round(best_price * ADULTS, 2)   # approximate total for 2 adults
+        total      = round(best_price * ADULTS, 2)
         per_person = round(total / TOTAL_PAX, 2)
-
-        is_alert = per_person < ALERT_THRESHOLD_PP
-        flag     = "YES" if is_alert else ""
+        is_alert   = per_person < ALERT_THRESHOLD_PP
+        flag       = "YES" if is_alert else ""
 
         print(f"${total:.0f} total  (${per_person:.0f}/person)  via {cheapest_source} {flag}")
 
@@ -107,7 +97,7 @@ items = list(client.dataset(run.default_dataset_id).iterate_items())        exce
             "return":          RETURN_DATE,
             "total_aud":       f"{total:.2f}",
             "per_person_aud":  f"{per_person:.2f}",
-            "best_price":      f"{best_price:.2f}",
+            "best_price_raw":  f"{best_price:.2f}",
             "cheapest_source": cheapest_source,
             "alert":           flag,
         })
@@ -133,7 +123,6 @@ items = list(client.dataset(run.default_dataset_id).iterate_items())        exce
             print(a)
         print(f"  Threshold: ${ALERT_THRESHOLD_PP}/person")
         print("="*55)
-
 
 if __name__ == "__main__":
     main()
