@@ -10,6 +10,13 @@ ADULTS         = 2
 CHILDREN       = 1
 CSV_FILE       = "flight_log.csv"
 
+# Adelaide Airport (ADL) and Denpasar/Bali (DPS)
+# Entity IDs confirmed from Sky Scrapper API docs
+ORIGIN_SKY        = "ADL"
+ORIGIN_ENTITY     = "95673402"   # Adelaide Airport
+DEST_SKY          = "DPS"
+DEST_ENTITY       = "95673625"   # Denpasar Ngurah Rai
+
 OUTBOUND_DATES = [
     "2027-04-03",
     "2027-04-10",
@@ -29,42 +36,35 @@ HEADERS = {
     "x-rapidapi-host": "sky-scrapper.p.rapidapi.com",
 }
 
-# ── Airport lookup ────────────────────────────────────────────────────────────
-def lookup_airport(name: str):
-    """Search by airport name/city and return (skyId, entityId)."""
+# ── Airport lookup (used once to verify entity IDs) ───────────────────────────
+def verify_airports():
+    """Print entity IDs for ADL and DPS so we can confirm they're correct."""
     url = "https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchAirport"
-    try:
-        resp = requests.get(url, headers=HEADERS,
-                            params={"query": name, "locale": "en-AU"}, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        print(f"  Airport lookup raw response for '{name}': {str(data)[:300]}")
-        results = data.get("data", [])
-        if not results:
-            return None, None
-        r = results[0]
-        # Try multiple possible key names
-        sky_id    = r.get("skyId") or r.get("iataCode") or r.get("PlaceId")
-        entity_id = (r.get("entityId")
-                     or (r.get("presentation") or {}).get("entityId")
-                     or (r.get("navigation") or {}).get("entityId")
-                     or str(r.get("PlaceId", "")))
-        return sky_id, entity_id
-    except requests.RequestException as e:
-        print(f"  Airport lookup error: {e}")
-        return None, None
+    for query, label in [("Adelaide airport", "ADL"), ("Denpasar airport", "DPS")]:
+        try:
+            resp = requests.get(url, headers=HEADERS,
+                                params={"query": query}, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("data", [])
+            for r in results[:2]:
+                sky    = r.get("skyId")
+                entity = (r.get("entityId")
+                          or (r.get("navigation") or {}).get("entityId"))
+                name   = (r.get("presentation") or {}).get("title", "")
+                print(f"  [{label}] {name}: skyId={sky}  entityId={entity}")
+        except Exception as e:
+            print(f"  Lookup error for {label}: {e}")
 
 
 # ── Flight search ─────────────────────────────────────────────────────────────
-def search_flights(depart_date, return_date,
-                   origin_sky, origin_entity,
-                   dest_sky, dest_entity):
+def search_flights(depart_date, return_date):
     url = "https://sky-scrapper.p.rapidapi.com/api/v2/flights/searchFlights"
     params = {
-        "originSkyId":         origin_sky,
-        "destinationSkyId":    dest_sky,
-        "originEntityId":      origin_entity,
-        "destinationEntityId": dest_entity,
+        "originSkyId":         ORIGIN_SKY,
+        "destinationSkyId":    DEST_SKY,
+        "originEntityId":      ORIGIN_ENTITY,
+        "destinationEntityId": DEST_ENTITY,
         "date":                depart_date,
         "returnDate":          return_date,
         "adults":              str(ADULTS),
@@ -78,7 +78,10 @@ def search_flights(depart_date, return_date,
     try:
         resp = requests.get(url, headers=HEADERS, params=params, timeout=30)
         resp.raise_for_status()
-        return resp.json()
+        result = resp.json()
+        # Print top-level keys so we can debug response structure if needed
+        print(f"    [debug] response keys: {list((result.get('data') or {}).keys())[:5]}")
+        return result
     except requests.RequestException as e:
         print(f"  ✗ API error for {depart_date}→{return_date}: {e}")
         return None
@@ -117,18 +120,9 @@ def main():
     print(f"Flight tracker — {now}")
     print(f"Route: ADL → DPS | {ADULTS} adults + {CHILDREN} child | {CURRENCY}\n")
 
-    # Look up airports by name (not IATA code)
-    print("Looking up airport IDs...")
-    origin_sky, origin_entity = lookup_airport("Adelaide")
-    dest_sky, dest_entity     = lookup_airport("Denpasar")
-    print(f"  ADL → skyId={origin_sky}  entityId={origin_entity}")
-    print(f"  DPS → skyId={dest_sky}  entityId={dest_entity}")
+    print("Verifying airport entity IDs...")
+    verify_airports()
     print()
-
-    # If lookup fails, abort cleanly
-    if not origin_sky or not dest_sky:
-        print("✗ Could not resolve airports — aborting.")
-        return
 
     for out in OUTBOUND_DATES:
         for ret in RETURN_DATES:
@@ -136,7 +130,7 @@ def main():
                 continue
 
             print(f"  Checking {out} → {ret} ...", end=" ", flush=True)
-            data = search_flights(out, ret, origin_sky, origin_entity, dest_sky, dest_entity)
+            data = search_flights(out, ret)
             if data is None:
                 continue
 
