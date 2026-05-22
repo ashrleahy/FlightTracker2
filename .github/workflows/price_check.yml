@@ -33,6 +33,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
           git add flight_log.csv || true
           git diff --staged --quiet && echo "No changes to commit" || \
             git commit -m "💰 Price update: $(date -u +'%Y-%m-%d %H:%M UTC')"
