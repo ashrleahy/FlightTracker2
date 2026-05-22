@@ -5,8 +5,6 @@ from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────────────────────
 RAPIDAPI_KEY   = os.environ["RAPIDAPI_KEY"]
-ORIGIN         = "ADL"
-DESTINATION    = "DPS"
 CURRENCY       = "AUD"
 ADULTS         = 2
 CHILDREN       = 1
@@ -32,26 +30,28 @@ HEADERS = {
 }
 
 # ── Airport lookup ────────────────────────────────────────────────────────────
-def lookup_airport(query: str):
-    """Return (skyId, entityId) for an airport IATA code."""
+def lookup_airport(name: str):
+    """Search by airport name/city and return (skyId, entityId)."""
     url = "https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchAirport"
     try:
         resp = requests.get(url, headers=HEADERS,
-                            params={"query": query, "locale": "en-AU"}, timeout=15)
+                            params={"query": name, "locale": "en-AU"}, timeout=15)
         resp.raise_for_status()
-        results = resp.json().get("data", [])
+        data = resp.json()
+        print(f"  Airport lookup raw response for '{name}': {str(data)[:300]}")
+        results = data.get("data", [])
         if not results:
-            print(f"  ✗ No airport found for '{query}'")
             return None, None
         r = results[0]
-        sky_id    = r.get("skyId") or r.get("iataCode")
+        # Try multiple possible key names
+        sky_id    = r.get("skyId") or r.get("iataCode") or r.get("PlaceId")
         entity_id = (r.get("entityId")
-                     or r.get("presentation", {}).get("entityId")
-                     or r.get("navigation", {}).get("entityId"))
-        print(f"  ✓ {query} → skyId={sky_id}  entityId={entity_id}")
+                     or (r.get("presentation") or {}).get("entityId")
+                     or (r.get("navigation") or {}).get("entityId")
+                     or str(r.get("PlaceId", "")))
         return sky_id, entity_id
     except requests.RequestException as e:
-        print(f"  ✗ Airport lookup error: {e}")
+        print(f"  Airport lookup error: {e}")
         return None, None
 
 
@@ -115,13 +115,17 @@ def main():
     alerts = []
 
     print(f"Flight tracker — {now}")
-    print(f"Route: {ORIGIN} → {DESTINATION} | {ADULTS} adults + {CHILDREN} child | {CURRENCY}\n")
+    print(f"Route: ADL → DPS | {ADULTS} adults + {CHILDREN} child | {CURRENCY}\n")
 
+    # Look up airports by name (not IATA code)
     print("Looking up airport IDs...")
-    origin_sky, origin_entity = lookup_airport(ORIGIN)
-    dest_sky, dest_entity     = lookup_airport(DESTINATION)
+    origin_sky, origin_entity = lookup_airport("Adelaide")
+    dest_sky, dest_entity     = lookup_airport("Denpasar")
+    print(f"  ADL → skyId={origin_sky}  entityId={origin_entity}")
+    print(f"  DPS → skyId={dest_sky}  entityId={dest_entity}")
     print()
 
+    # If lookup fails, abort cleanly
     if not origin_sky or not dest_sky:
         print("✗ Could not resolve airports — aborting.")
         return
