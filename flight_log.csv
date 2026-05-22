@@ -1,0 +1,4 @@
+timestamp,outbound,return,total_aud,per_person_aud,best_price_raw,cheapest_source,alert
+2026-05-22T06:15:43Z,2027-04-03,2027-04-24,1136.00,378.67,568.00,cached,YES
+2026-05-22T06:15:43Z,2027-04-10,2027-04-24,1136.00,378.67,568.00,cached,YES
+2026-05-22T06:15:43Z,2027-04-24,2027-04-24,1136.00,378.67,568.00,cached,YES
