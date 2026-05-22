@@ -1,0 +1,39 @@
+name: Price Check
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 22:00 UTC = 08:30 ACST (Adelaide) — runs every morning
+  workflow_dispatch:         # lets you trigger it manually from GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pandas
+
+      - name: Run tracker
+        env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+        run: python tracker.py
+
+      - name: Commit updated CSV
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add flight_log.csv
+          git diff --staged --quiet && echo "No price changes to commit" || \
+            git commit -m "💰 Price update: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push origin main
