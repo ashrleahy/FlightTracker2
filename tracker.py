@@ -1,68 +1,90 @@
 import os
 import csv
 import requests
-from datetime import datetime, date, timedelta
+from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────────────────────
 RAPIDAPI_KEY   = os.environ["RAPIDAPI_KEY"]
-ORIGIN         = "ADL"          # Adelaide
-DESTINATION    = "DPS"          # Bali (Denpasar)
+ORIGIN         = "ADL"
+DESTINATION    = "DPS"
 CURRENCY       = "AUD"
 ADULTS         = 2
-CHILDREN       = 1              # 9-year-old (counts as full fare on Jetstar intl)
+CHILDREN       = 1
 CSV_FILE       = "flight_log.csv"
 
-# Dates to track — edit these to suit your travel window
-# Format: "YYYY-MM-DD"
 OUTBOUND_DATES = [
-    "2027-04-03",   # week before Easter
-    "2027-04-10",   # Easter school holidays start
-    "2027-04-17",   # mid-school-holidays
-    "2027-04-24",   # post-Easter
+    "2027-04-03",
+    "2027-04-10",
+    "2027-04-17",
+    "2027-04-24",
 ]
 RETURN_DATES = [
-    "2027-04-17",   # 2 weeks after earliest outbound
+    "2027-04-17",
     "2027-04-24",
     "2027-05-01",
 ]
 
-# Alert threshold — script will flag if price per person drops below this
-ALERT_THRESHOLD_PP = 450        # AUD per person return
+ALERT_THRESHOLD_PP = 450   # AUD per person
 
-# ── API call ──────────────────────────────────────────────────────────────────
-def search_flights(depart_date: str, return_date: str) -> dict | None:
-    """Query Sky Scrapper on RapidAPI for ADL→DPS return fares."""
+HEADERS = {
+    "x-rapidapi-key":  RAPIDAPI_KEY,
+    "x-rapidapi-host": "sky-scrapper.p.rapidapi.com",
+}
+
+# ── Airport lookup ────────────────────────────────────────────────────────────
+def lookup_airport(query: str):
+    """Return (skyId, entityId) for an airport IATA code."""
+    url = "https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchAirport"
+    try:
+        resp = requests.get(url, headers=HEADERS,
+                            params={"query": query, "locale": "en-AU"}, timeout=15)
+        resp.raise_for_status()
+        results = resp.json().get("data", [])
+        if not results:
+            print(f"  ✗ No airport found for '{query}'")
+            return None, None
+        r = results[0]
+        sky_id    = r.get("skyId") or r.get("iataCode")
+        entity_id = (r.get("entityId")
+                     or r.get("presentation", {}).get("entityId")
+                     or r.get("navigation", {}).get("entityId"))
+        print(f"  ✓ {query} → skyId={sky_id}  entityId={entity_id}")
+        return sky_id, entity_id
+    except requests.RequestException as e:
+        print(f"  ✗ Airport lookup error: {e}")
+        return None, None
+
+
+# ── Flight search ─────────────────────────────────────────────────────────────
+def search_flights(depart_date, return_date,
+                   origin_sky, origin_entity,
+                   dest_sky, dest_entity):
     url = "https://sky-scrapper.p.rapidapi.com/api/v2/flights/searchFlights"
     params = {
-        "originSkyId":        ORIGIN,
-        "destinationSkyId":   DESTINATION,
-        "originEntityId":     "27544008",   # Adelaide Airport entity ID
-        "destinationEntityId":"27537542",   # Denpasar (Bali) entity ID
-        "date":               depart_date,
-        "returnDate":         return_date,
-        "adults":             str(ADULTS),
-        "children":           str(CHILDREN),
-        "currency":           CURRENCY,
-        "countryCode":        "AU",
-        "market":             "en-AU",
-        "cabinClass":         "economy",
-        "sortBy":             "best",
-    }
-    headers = {
-        "x-rapidapi-key":  RAPIDAPI_KEY,
-        "x-rapidapi-host": "sky-scrapper.p.rapidapi.com",
+        "originSkyId":         origin_sky,
+        "destinationSkyId":    dest_sky,
+        "originEntityId":      origin_entity,
+        "destinationEntityId": dest_entity,
+        "date":                depart_date,
+        "returnDate":          return_date,
+        "adults":              str(ADULTS),
+        "children":            str(CHILDREN),
+        "currency":            CURRENCY,
+        "countryCode":         "AU",
+        "market":              "en-AU",
+        "cabinClass":          "economy",
+        "sortBy":              "best",
     }
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        resp = requests.get(url, headers=HEADERS, params=params, timeout=30)
         resp.raise_for_status()
         return resp.json()
     except requests.RequestException as e:
-        print(f"  ✗ API error for {depart_date} → {return_date}: {e}")
+        print(f"  ✗ API error for {depart_date}→{return_date}: {e}")
         return None
 
 
-def extract_cheapest(data: dict) -> float | None:
-    """Pull the lowest total price from the API response."""
+def extract_cheapest(data):
     try:
         itineraries = data["data"]["itineraries"]
         if not itineraries:
@@ -76,14 +98,7 @@ def extract_cheapest(data: dict) -> float | None:
 # ── CSV helpers ───────────────────────────────────────────────────────────────
 FIELDNAMES = ["timestamp", "outbound", "return", "total_aud", "per_person_aud", "alert"]
 
-def load_csv() -> list[dict]:
-    if not os.path.exists(CSV_FILE):
-        return []
-    with open(CSV_FILE, newline="") as f:
-        return list(csv.DictReader(f))
-
-
-def append_rows(rows: list[dict]):
+def append_rows(rows):
     file_exists = os.path.exists(CSV_FILE)
     with open(CSV_FILE, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
@@ -102,14 +117,22 @@ def main():
     print(f"Flight tracker — {now}")
     print(f"Route: {ORIGIN} → {DESTINATION} | {ADULTS} adults + {CHILDREN} child | {CURRENCY}\n")
 
+    print("Looking up airport IDs...")
+    origin_sky, origin_entity = lookup_airport(ORIGIN)
+    dest_sky, dest_entity     = lookup_airport(DESTINATION)
+    print()
+
+    if not origin_sky or not dest_sky:
+        print("✗ Could not resolve airports — aborting.")
+        return
+
     for out in OUTBOUND_DATES:
         for ret in RETURN_DATES:
-            # Skip nonsensical combos where return is before outbound
             if ret <= out:
                 continue
 
             print(f"  Checking {out} → {ret} ...", end=" ", flush=True)
-            data = search_flights(out, ret)
+            data = search_flights(out, ret, origin_sky, origin_entity, dest_sky, dest_entity)
             if data is None:
                 continue
 
@@ -124,15 +147,14 @@ def main():
 
             print(f"${total:.0f} total  (${per_person:.0f}/person) {flag}")
 
-            row = {
+            new_rows.append({
                 "timestamp":      now,
                 "outbound":       out,
                 "return":         ret,
                 "total_aud":      f"{total:.2f}",
                 "per_person_aud": f"{per_person:.2f}",
                 "alert":          flag,
-            }
-            new_rows.append(row)
+            })
 
             if is_alert:
                 alerts.append(
