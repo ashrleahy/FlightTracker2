@@ -70,8 +70,7 @@ def main():
 
         try:
             run = client.actor(ACTOR_ID).call(run_input=run_input)
-            items = list(client.dataset(run.default_dataset_id).iterate_items())
-        except Exception as e:
+items = list(client.dataset(run.default_dataset_id).iterate_items())        except Exception as e:
             print(f"error — {e}")
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
