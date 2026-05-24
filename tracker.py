@@ -15,21 +15,19 @@ ADULTS       = 1
 CABIN        = "ECONOMY"
 CSV_FILE     = "flight_log.csv"
 
-# 1st preference: 18 Apr out, 2 May return
-# 2nd preference: 16 Apr out, 1 May return
 COMBOS = [
     ("2027-04-18", "2027-05-02", "1st preference"),
     ("2027-04-16", "2027-05-01", "2nd preference"),
 ]
 
-ALERT_THRESHOLD = 500    # AUD per adult — alert if cheaper
-MAX_PRICE       = 1500   # AUD per adult — filter garbage
-MAX_STOPS       = 1
+ALERT_THRESHOLD = 500
+MAX_PRICE       = 3000   # loosened — Kiwi prices can be high
+MAX_STOPS       = 2      # loosened — let's see what's out there
 SKIP_SOURCES    = {"cached"}
 DELAY_BETWEEN_CALLS = 5
 
 # ── Jetstar deep link ─────────────────────────────────────────────────────────
-def jetstar_link(out: str, ret: str) -> str:
+def jetstar_link(out, ret):
     d_out = datetime.strptime(out, "%Y-%m-%d").strftime("%d%m%y")
     d_ret = datetime.strptime(ret, "%Y-%m-%d").strftime("%d%m%y")
     return (
@@ -90,6 +88,13 @@ def main():
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
 
+        # Debug — show all raw results
+        print(f"\n    Raw results ({len(items)}):")
+        for i in items:
+            sources = set(i.get("prices", {}).keys())
+            print(f"      {i.get('airline','?')} | {i.get('stops','?')} stops | "
+                  f"${i.get('bestPrice','?')} | sources: {sources} | {i.get('duration','?')}")
+
         filtered = []
         for i in items:
             sources = set(i.get("prices", {}).keys())
@@ -104,7 +109,7 @@ def main():
             filtered.append(i)
 
         if not filtered:
-            print(f"no results after filtering ({len(items)} raw)")
+            print(f"    → no results after filtering")
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
 
@@ -117,7 +122,7 @@ def main():
         is_alert   = price < ALERT_THRESHOLD
         flag       = "YES" if is_alert else ""
 
-        print(f"{airline} | {duration} | {stops} stop(s) | ${price:.0f} {flag}")
+        print(f"    → Best: {airline} | {duration} | {stops} stop(s) | ${price:.0f} {flag}")
 
         new_rows.append({
             "timestamp":    now,
@@ -135,9 +140,7 @@ def main():
         })
 
         if is_alert:
-            alerts.append(
-                f"  🔔 [{pref}] {airline} | {out} → {ret} | ${price:.0f}/adult"
-            )
+            alerts.append(f"  🔔 [{pref}] {airline} | {out} → {ret} | ${price:.0f}/adult")
 
         time.sleep(DELAY_BETWEEN_CALLS)
 
@@ -145,7 +148,7 @@ def main():
         append_rows(new_rows)
         print(f"\n✓ Logged {len(new_rows)} price points to {CSV_FILE}")
     else:
-        print("\n⚠ No prices retrieved — all filtered out (cached only).")
+        print("\n⚠ No prices retrieved.")
 
     if alerts:
         print("\n" + "="*55)
