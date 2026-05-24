@@ -1,0 +1,3 @@
+timestamp,preference,outbound,return,trip_days,airline,duration,stops,price_aud,source,jetstar_link,alert
+2026-05-24T22:59:02Z,1st preference,2027-04-18,2027-05-02,14,Virgin Australia Airlines,26h,1,1623.00,kiwi,https://www.jetstar.com/au/en/flights?origin=ADL&destination=DPS&departure-date=180427&return-date=020527&adult=1&child=0&infant=0&trip-type=R&cabin-class=E,
+2026-05-24T22:59:02Z,2nd preference,2027-04-16,2027-05-01,15,Virgin Australia Airlines,21h 45m,1,1507.00,kiwi,https://www.jetstar.com/au/en/flights?origin=ADL&destination=DPS&departure-date=160427&return-date=010527&adult=1&child=0&infant=0&trip-type=R&cabin-class=E,
