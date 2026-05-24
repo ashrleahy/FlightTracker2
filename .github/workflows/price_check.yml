@@ -28,12 +28,13 @@ jobs:
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
         run: python tracker.py
-
-      - name: Commit updated CSV
+- name: Commit updated CSV
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git stash
           git pull --rebase origin main
+          git stash pop
           git add flight_log.csv || true
           git diff --staged --quiet && echo "No changes to commit" || \
             git commit -m "💰 Price update: $(date -u +'%Y-%m-%d %H:%M UTC')"
