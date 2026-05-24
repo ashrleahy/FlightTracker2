@@ -9,13 +9,12 @@ APIFY_TOKEN  = os.environ["APIFY_TOKEN"]
 ACTOR_ID     = "solidcode/booking-scraper"
 CSV_FILE     = "hotel_log.csv"
 
-ADULTS   = 2
-CHILDREN = 1
+ADULTS     = 2
+CHILDREN   = 1
 CHILD_AGES = [9]
-ROOMS    = 1
-CURRENCY = "AUD"
+ROOMS      = 1
+CURRENCY   = "AUD"
 
-# ── Hotels to track ───────────────────────────────────────────────────────────
 HOTELS = [
     {
         "name":     "Andaz Bali",
@@ -43,18 +42,18 @@ HOTELS = [
     },
 ]
 
-DELAY_BETWEEN_CALLS = 10   # booking.com is slower than flights
+ALERT_THRESHOLDS = {
+    "Andaz Bali":     800,
+    "Villa Tokay":    400,
+    "BASK Gili Meno": 500,
+}
+
+DELAY_BETWEEN_CALLS = 10
 
 # ── CSV ───────────────────────────────────────────────────────────────────────
 FIELDNAMES = ["timestamp", "hotel", "location", "checkin", "checkout",
               "nights", "price_total", "price_per_night", "rating",
               "availability", "booking_url", "alert"]
-
-ALERT_THRESHOLDS = {
-    "Andaz Bali":    800,    # AUD per night alert threshold
-    "Villa Tokay":   400,
-    "BASK Gili Meno": 500,
-}
 
 def append_rows(rows):
     file_exists = os.path.exists(CSV_FILE)
@@ -82,17 +81,16 @@ def main():
         print(f"  [{name}] {checkin} → {checkout} ({nights} nights) ...", end=" ", flush=True)
 
         run_input = {
-            "urls":          [hotel["url"]],
-            "checkinDate":   checkin,
-            "checkoutDate":  checkout,
-            "adults":        ADULTS,
-            "children":      CHILDREN,
-            "childrenAges":  CHILD_AGES,
-            "rooms":         ROOMS,
-            "currency":      CURRENCY,
-            "language":      "en-gb",
-            "maxResults":    5,
-            "includeRoomDetails": False,
+            "startUrls":    [{"url": hotel["url"]}],
+            "checkinDate":  checkin,
+            "checkoutDate": checkout,
+            "adults":       ADULTS,
+            "children":     CHILDREN,
+            "childrenAges": CHILD_AGES,
+            "rooms":        ROOMS,
+            "currency":     CURRENCY,
+            "language":     "en-gb",
+            "maxResults":   5,
         }
 
         try:
@@ -108,45 +106,47 @@ def main():
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
 
-        # Debug — show raw fields on first run
-        print(f"\n    Raw keys: {list(items[0].keys())[:12]}")
+        print(f"\n    Raw keys: {list(items[0].keys())}")
 
-        # Find the matching hotel (URL-based search returns 1 result usually)
         result      = items[0]
-        price_total = result.get("price") or result.get("priceTotal") or result.get("totalPrice")
-        price_night = result.get("pricePerNight") or result.get("price_per_night")
-        rating      = result.get("rating") or result.get("reviewScore") or result.get("score")
+        price_total = (result.get("price") or result.get("priceTotal")
+                       or result.get("totalPrice") or result.get("price_total"))
+        price_night = (result.get("pricePerNight") or result.get("price_per_night")
+                       or result.get("priceNight"))
+        rating      = (result.get("rating") or result.get("reviewScore")
+                       or result.get("score") or result.get("review_score"))
         avail       = result.get("available", True)
         book_url    = result.get("url") or result.get("bookingUrl") or hotel["url"]
 
-        # Calculate per night if not provided
         if price_total and not price_night and nights:
-            price_night = round(price_total / nights, 2)
+            price_night = round(float(price_total) / nights, 2)
         elif price_night and not price_total and nights:
-            price_total = round(price_night * nights, 2)
+            price_total = round(float(price_night) * nights, 2)
 
         threshold = ALERT_THRESHOLDS.get(name, 9999)
-        is_alert  = price_night and price_night < threshold
+        is_alert  = price_night and float(price_night) < threshold
         flag      = "YES" if is_alert else ""
 
         if price_night:
-            print(f"${price_night:.0f}/night | ${price_total:.0f} total | rating: {rating} {flag}")
+            print(f"    → ${price_night:.0f}/night | ${price_total:.0f} total | rating: {rating} {flag}")
         else:
-            print(f"no price (raw: {result.get('price')}, {result.get('priceTotal')})")
+            print(f"    → no price found. Raw price fields: "
+                  f"price={result.get('price')} priceTotal={result.get('priceTotal')} "
+                  f"totalPrice={result.get('totalPrice')}")
 
         new_rows.append({
-            "timestamp":      now,
-            "hotel":          name,
-            "location":       hotel["location"],
-            "checkin":        checkin,
-            "checkout":       checkout,
-            "nights":         nights,
-            "price_total":    f"{price_total:.2f}" if price_total else "",
-            "price_per_night": f"{price_night:.2f}" if price_night else "",
-            "rating":         rating or "",
-            "availability":   "yes" if avail else "no",
-            "booking_url":    book_url,
-            "alert":          flag,
+            "timestamp":       now,
+            "hotel":           name,
+            "location":        hotel["location"],
+            "checkin":         checkin,
+            "checkout":        checkout,
+            "nights":          nights,
+            "price_total":     f"{float(price_total):.2f}" if price_total else "",
+            "price_per_night": f"{float(price_night):.2f}" if price_night else "",
+            "rating":          rating or "",
+            "availability":    "yes" if avail else "no",
+            "booking_url":     book_url,
+            "alert":           flag,
         })
 
         time.sleep(DELAY_BETWEEN_CALLS)
