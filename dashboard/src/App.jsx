@@ -1,222 +1,263 @@
 import { useState, useEffect } from "react";
 import Papa from "papaparse";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
-// ── CONFIG — update this to your repo ────────────────────────────────────────
 const CSV_URL = "https://raw.githubusercontent.com/ashrleahy/FlightTracker2/main/flight_log.csv";
 const ALERT_THRESHOLD = 500;
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const css = `
-  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Bebas+Neue&family=JetBrains+Mono:wght@400;500&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg: #0a0a0a;
-    --surface: #111111;
-    --border: #1e1e1e;
-    --border-bright: #2a2a2a;
-    --text: #e8e8e8;
-    --muted: #555;
-    --pref1: #f0c040;
-    --pref2: #4090f0;
-    --alert: #40c080;
-    --danger: #f05040;
-    --font-display: 'Syne', sans-serif;
-    --font-mono: 'DM Mono', monospace;
+    --bg: #0d0d0f;
+    --surface: #16161a;
+    --surface2: #1e1e24;
+    --border: #2a2a35;
+    --text: #f0f0f5;
+    --text-secondary: #9090a8;
+    --text-muted: #55556a;
+    --pref1: #ffcc00;
+    --pref1-dim: rgba(255,204,0,0.12);
+    --pref2: #4da6ff;
+    --pref2-dim: rgba(77,166,255,0.12);
+    --alert: #00e090;
+    --alert-dim: rgba(0,224,144,0.1);
+    --font-display: 'Bebas Neue', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
   }
 
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: var(--font-mono);
+    font-family: var(--font-body);
     min-height: 100vh;
-    padding: 0;
+    -webkit-font-smoothing: antialiased;
   }
 
   .app {
-    max-width: 1100px;
+    max-width: 1080px;
     margin: 0 auto;
-    padding: 48px 24px;
+    padding: 56px 28px;
   }
 
+  /* ── Header ── */
   .header {
-    margin-bottom: 48px;
+    margin-bottom: 52px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 32px;
   }
 
-  .header-eyebrow {
+  .eyebrow {
     font-family: var(--font-mono);
     font-size: 11px;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 12px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
   }
 
-  .header-title {
+  .title {
     font-family: var(--font-display);
-    font-size: clamp(2rem, 5vw, 3.5rem);
-    font-weight: 800;
-    line-height: 1;
-    letter-spacing: -0.03em;
+    font-size: clamp(3rem, 8vw, 5.5rem);
+    line-height: 0.95;
+    letter-spacing: 0.02em;
     color: var(--text);
   }
 
-  .header-title span {
-    color: var(--pref1);
-  }
+  .title .arrow { color: var(--pref1); }
 
-  .header-sub {
-    margin-top: 12px;
+  .subtitle {
+    margin-top: 14px;
     font-size: 13px;
-    color: var(--muted);
-    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
   }
 
-  .divider {
-    width: 100%;
-    height: 1px;
-    background: var(--border);
-    margin: 32px 0;
-  }
-
-  /* Cards */
+  /* ── Cards ── */
   .cards {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 40px;
+    gap: 20px;
+    margin-bottom: 32px;
   }
-
-  @media (max-width: 600px) { .cards { grid-template-columns: 1fr; } }
+  @media (max-width: 580px) { .cards { grid-template-columns: 1fr; } }
 
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 2px;
-    padding: 24px;
+    border-radius: 8px;
+    padding: 28px;
     position: relative;
     overflow: hidden;
+    transition: border-color 0.2s;
   }
+  .card:hover { border-color: #3a3a48; }
 
-  .card::before {
-    content: '';
+  .card-accent {
     position: absolute;
     top: 0; left: 0; right: 0;
-    height: 2px;
+    height: 3px;
+    border-radius: 8px 8px 0 0;
   }
-
-  .card.pref1::before { background: var(--pref1); }
-  .card.pref2::before { background: var(--pref2); }
-  .card.alert-card::before { background: var(--alert); }
+  .card.p1 .card-accent { background: linear-gradient(90deg, var(--pref1), rgba(255,204,0,0.3)); }
+  .card.p2 .card-accent { background: linear-gradient(90deg, var(--pref2), rgba(77,166,255,0.3)); }
 
   .card-label {
+    font-family: var(--font-mono);
     font-size: 10px;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 16px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+  }
+
+  .card-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
   }
 
   .card-price {
     font-family: var(--font-display);
-    font-size: 3rem;
-    font-weight: 800;
+    font-size: 4rem;
     line-height: 1;
-    letter-spacing: -0.04em;
+    letter-spacing: 0.02em;
   }
-
-  .card.pref1 .card-price { color: var(--pref1); }
-  .card.pref2 .card-price { color: var(--pref2); }
+  .card.p1 .card-price { color: var(--pref1); }
+  .card.p2 .card-price { color: var(--pref2); }
 
   .card-price-unit {
     font-family: var(--font-mono);
-    font-size: 13px;
-    color: var(--muted);
-    margin-left: 6px;
-    font-weight: 400;
-  }
-
-  .card-meta {
-    margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .card-meta-row {
-    display: flex;
-    justify-content: space-between;
     font-size: 12px;
-    color: var(--muted);
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 6px;
+    color: var(--text-muted);
   }
 
-  .card-meta-row span:last-child {
+  .card-dates {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+  }
+
+  .card-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 16px 0;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .meta-item {}
+
+  .meta-key {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+  }
+
+  .meta-val {
+    font-size: 13px;
     color: var(--text);
+    font-weight: 500;
   }
 
-  .card-alert-badge {
-    display: inline-block;
-    background: var(--alert);
-    color: #000;
+  .alert-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--alert-dim);
+    border: 1px solid rgba(0,224,144,0.3);
+    color: var(--alert);
+    font-family: var(--font-mono);
     font-size: 10px;
-    font-weight: 500;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    padding: 2px 8px;
-    border-radius: 2px;
-    margin-top: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    margin-top: 16px;
   }
 
-  .card-link {
+  .alert-dot-pulse {
+    width: 6px; height: 6px;
+    background: var(--alert);
+    border-radius: 50%;
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+
+  .book-btn {
     display: inline-block;
-    margin-top: 14px;
+    margin-top: 16px;
+    padding: 8px 16px;
+    border-radius: 5px;
+    font-family: var(--font-mono);
     font-size: 11px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--muted);
     text-decoration: none;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 2px;
-    transition: color 0.15s, border-color 0.15s;
+    font-weight: 500;
+    transition: opacity 0.15s;
   }
+  .book-btn:hover { opacity: 0.8; }
+  .card.p1 .book-btn { background: var(--pref1-dim); color: var(--pref1); border: 1px solid rgba(255,204,0,0.25); }
+  .card.p2 .book-btn { background: var(--pref2-dim); color: var(--pref2); border: 1px solid rgba(77,166,255,0.25); }
 
-  .card.pref1 .card-link:hover { color: var(--pref1); border-color: var(--pref1); }
-  .card.pref2 .card-link:hover { color: var(--pref2); border-color: var(--pref2); }
-
-  /* Chart */
-  .chart-section {
+  /* ── Chart ── */
+  .section {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 2px;
+    border-radius: 8px;
     padding: 28px;
-    margin-bottom: 40px;
-  }
-
-  .section-label {
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--muted);
     margin-bottom: 24px;
   }
 
-  /* Table */
-  .table-section {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-bottom: 40px;
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
   }
 
-  .table-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--border);
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    letter-spacing: 0.04em;
+    color: var(--text);
   }
+
+  .legend {
+    display: flex;
+    gap: 16px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+    letter-spacing: 0.08em;
+  }
+
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; }
 
   table {
     width: 100%;
@@ -225,322 +266,298 @@ const css = `
   }
 
   th {
-    text-align: left;
-    font-size: 10px;
-    letter-spacing: 0.15em;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--muted);
-    padding: 10px 16px;
+    color: var(--text-muted);
+    text-align: left;
+    padding: 8px 14px;
     border-bottom: 1px solid var(--border);
-    font-weight: 500;
+    white-space: nowrap;
   }
 
   td {
-    padding: 10px 16px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--border);
-    color: var(--text);
-    vertical-align: middle;
+    color: var(--text-secondary);
+    white-space: nowrap;
   }
 
   tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,255,255,0.02); }
+  tr:hover td { background: rgba(255,255,255,0.015); color: var(--text); }
 
-  .pref-badge {
-    display: inline-block;
-    font-size: 9px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    padding: 2px 6px;
-    border-radius: 2px;
+  td.price-cell {
+    font-family: var(--font-mono);
     font-weight: 500;
-  }
-
-  .pref-badge.p1 { background: rgba(240,192,64,0.15); color: var(--pref1); }
-  .pref-badge.p2 { background: rgba(64,144,240,0.15); color: var(--pref2); }
-
-  .alert-dot {
-    display: inline-block;
-    width: 6px; height: 6px;
-    background: var(--alert);
-    border-radius: 50%;
-  }
-
-  .mono { font-family: var(--font-mono); }
-
-  .book-link {
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted);
-    text-decoration: none;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 1px;
-  }
-  .book-link:hover { color: var(--text); border-color: var(--text); }
-
-  /* Status */
-  .status-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    color: var(--muted);
-    margin-top: 32px;
-  }
-
-  .status-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--alert);
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
-  .empty {
-    text-align: center;
-    padding: 60px 24px;
-    color: var(--muted);
     font-size: 13px;
   }
 
-  .loading {
+  td.price-alert { color: var(--alert) !important; }
+  td.mono { font-family: var(--font-mono); font-size: 11px; }
+
+  .badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+  .badge.p1 { background: var(--pref1-dim); color: var(--pref1); }
+  .badge.p2 { background: var(--pref2-dim); color: var(--pref2); }
+
+  .tbl-link {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    text-decoration: none;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1px;
+    transition: color 0.15s;
+  }
+  .tbl-link:hover { color: var(--text); }
+
+  /* ── Footer ── */
+  .footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .status-dot {
+    width: 7px; height: 7px;
+    background: var(--alert);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  .empty, .loading {
     text-align: center;
     padding: 80px 24px;
-    color: var(--muted);
-    font-size: 12px;
-    letter-spacing: 0.1em;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
   }
 
-  /* Tooltip */
-  .custom-tooltip {
-    background: #1a1a1a;
-    border: 1px solid var(--border-bright);
+  .tooltip-box {
+    background: #1e1e26;
+    border: 1px solid var(--border);
+    border-radius: 6px;
     padding: 12px 16px;
+    font-family: var(--font-mono);
     font-size: 12px;
   }
-
-  .tooltip-label {
-    color: var(--muted);
+  .tooltip-date {
+    color: var(--text-muted);
     font-size: 10px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     margin-bottom: 8px;
   }
-
   .tooltip-row {
     display: flex;
     justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 4px;
+    gap: 20px;
+    margin-bottom: 3px;
   }
 `;
 
-// ── Custom tooltip ────────────────────────────────────────────────────────────
-const CustomTooltip = ({ active, payload, label }) => {
+const Tooltip_ = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="custom-tooltip">
-      <div className="tooltip-label">{label}</div>
-      {payload.map((p) => (
+    <div className="tooltip-box">
+      <div className="tooltip-date">{label}</div>
+      {payload.map(p => p.value && (
         <div key={p.name} className="tooltip-row">
           <span style={{ color: p.color }}>{p.name}</span>
-          <span style={{ color: "#e8e8e8" }}>${p.value}</span>
+          <span style={{ color: "#f0f0f5" }}>${p.value}</span>
         </div>
       ))}
     </div>
   );
 };
 
-// ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
     Papa.parse(CSV_URL, {
-      download: true,
-      header: true,
-      skipEmptyLines: true,
-      complete: ({ data }) => {
-        setRows(data.reverse()); // newest first
-        if (data.length) setLastUpdated(data[data.length - 1]?.timestamp);
-        setLoading(false);
-      },
-      error: (err) => {
-        setError(err.message);
-        setLoading(false);
-      },
+      download: true, header: true, skipEmptyLines: true,
+      complete: ({ data }) => { setRows(data.reverse()); setLoading(false); },
+      error: (err) => { setError(err.message); setLoading(false); },
     });
   }, []);
 
-  // Latest price per preference
-  const latest = (pref) =>
-    rows.find((r) => r.preference?.toLowerCase().includes(pref));
+  const latest = (n) => rows.find(r => r.preference?.includes(n));
+  const l1 = latest("1st");
+  const l2 = latest("2nd");
 
-  const latest1 = latest("1st");
-  const latest2 = latest("2nd");
-
-  // Chart data — group by date, one point per preference
   const chartData = (() => {
-    const byDate = {};
-    [...rows].reverse().forEach((r) => {
-      const day = r.timestamp?.slice(0, 10);
-      if (!day) return;
-      if (!byDate[day]) byDate[day] = { date: day };
-      if (r.preference?.includes("1st")) byDate[day]["1st pref"] = parseFloat(r.price_aud);
-      if (r.preference?.includes("2nd")) byDate[day]["2nd pref"] = parseFloat(r.price_aud);
+    const map = {};
+    [...rows].reverse().forEach(r => {
+      const d = r.timestamp?.slice(0, 10);
+      if (!d || !r.price_aud) return;
+      if (!map[d]) map[d] = { date: d };
+      if (r.preference?.includes("1st")) map[d]["1st"] = parseFloat(r.price_aud);
+      if (r.preference?.includes("2nd")) map[d]["2nd"] = parseFloat(r.price_aud);
     });
-    return Object.values(byDate);
+    return Object.values(map);
   })();
 
-  const fmt = (n) => n ? `$${parseFloat(n).toFixed(0)}` : "—";
+  const fmt = n => n ? `$${parseFloat(n).toFixed(0)}` : "—";
+  const lastDate = [...rows].reverse().find(r => r.timestamp)?.timestamp?.slice(0,10);
 
   return (
     <>
       <style>{css}</style>
       <div className="app">
         <div className="header">
-          <div className="header-eyebrow">Flight Price Tracker</div>
-          <h1 className="header-title">ADL <span>→</span> DPS</h1>
-          <div className="header-sub">Adelaide · Bali · 1 adult · Economy · Daily tracking</div>
+          <div className="eyebrow">Flight Price Tracker · Adelaide → Bali</div>
+          <h1 className="title">ADL <span className="arrow">→</span> DPS</h1>
+          <div className="subtitle">1 adult · Economy · Direct or 1 stop · Updated daily 08:30 ACST</div>
         </div>
 
         {loading && <div className="loading">Loading price data...</div>}
-        {error && <div className="empty">Could not load CSV — check the repo URL is correct and the file exists.</div>}
+        {error && <div className="empty">Could not load data — check repo URL and CSV exists.</div>}
+        {!loading && !error && rows.length === 0 && <div className="empty">No data yet — run the tracker first.</div>}
 
-        {!loading && !error && rows.length === 0 && (
-          <div className="empty">No data yet — run the tracker to populate prices.</div>
-        )}
+        {!loading && !error && rows.length > 0 && (<>
 
-        {!loading && !error && rows.length > 0 && (
-          <>
-            {/* Price cards */}
-            <div className="cards">
-              {[
-                { pref: "1st", data: latest1, cls: "pref1", label: "1st Preference", dates: "18 Apr → 2 May" },
-                { pref: "2nd", data: latest2, cls: "pref2", label: "2nd Preference", dates: "16 Apr → 1 May" },
-              ].map(({ data, cls, label, dates }) => (
-                <div key={label} className={`card ${cls} ${data?.alert === "YES" ? "alert-card" : ""}`}>
-                  <div className="card-label">{label} · {dates}</div>
-                  <div className="card-price">
-                    {fmt(data?.price_aud)}
-                    <span className="card-price-unit">/ adult</span>
-                  </div>
-                  {data && (
-                    <div className="card-meta">
-                      <div className="card-meta-row">
-                        <span>Airline</span>
-                        <span>{data.airline || "—"}</span>
-                      </div>
-                      <div className="card-meta-row">
-                        <span>Duration</span>
-                        <span>{data.duration || "—"}</span>
-                      </div>
-                      <div className="card-meta-row">
-                        <span>Stops</span>
-                        <span>{data.stops ?? "—"}</span>
-                      </div>
-                      <div className="card-meta-row">
-                        <span>Source</span>
-                        <span>{data.source || "—"}</span>
-                      </div>
-                    </div>
-                  )}
-                  {data?.alert === "YES" && (
-                    <div className="card-alert-badge">⚡ Below threshold</div>
-                  )}
-                  {data?.jetstar_link && (
-                    <a className="card-link" href={data.jetstar_link} target="_blank" rel="noopener">
-                      Search on Jetstar →
-                    </a>
-                  )}
+          <div className="cards">
+            {[
+              { n: "1st", label: "1st Preference", dates: "18 Apr → 2 May 2027", data: l1, cls: "p1" },
+              { n: "2nd", label: "2nd Preference", dates: "16 Apr → 1 May 2027", data: l2, cls: "p2" },
+            ].map(({ label, dates, data, cls }) => (
+              <div key={label} className={`card ${cls}`}>
+                <div className="card-accent" />
+                <div className="card-label">{label}</div>
+                <div className="card-price-row">
+                  <div className="card-price">{fmt(data?.price_aud)}</div>
+                  <div className="card-price-unit">/ adult AUD</div>
                 </div>
-              ))}
+                <div className="card-dates">{dates}</div>
+                <div className="card-divider" />
+                <div className="meta-grid">
+                  <div className="meta-item">
+                    <div className="meta-key">Airline</div>
+                    <div className="meta-val">{data?.airline || "—"}</div>
+                  </div>
+                  <div className="meta-item">
+                    <div className="meta-key">Duration</div>
+                    <div className="meta-val">{data?.duration || "—"}</div>
+                  </div>
+                  <div className="meta-item">
+                    <div className="meta-key">Stops</div>
+                    <div className="meta-val">{data?.stops ?? "—"}</div>
+                  </div>
+                  <div className="meta-item">
+                    <div className="meta-key">Source</div>
+                    <div className="meta-val">{data?.source || "—"}</div>
+                  </div>
+                </div>
+                {data?.alert === "YES" && (
+                  <div className="alert-pill">
+                    <span className="alert-dot-pulse" />
+                    Below alert threshold
+                  </div>
+                )}
+                {data?.jetstar_link && (
+                  <a className="book-btn" href={data.jetstar_link} target="_blank" rel="noopener">
+                    Search Jetstar →
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {chartData.length > 0 && (
+            <div className="section">
+              <div className="section-header">
+                <div className="section-title">Price History</div>
+                <div className="legend">
+                  <div className="legend-item"><div className="legend-dot" style={{background:"#ffcc00"}} />1st pref</div>
+                  <div className="legend-item"><div className="legend-dot" style={{background:"#4da6ff"}} />2nd pref</div>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={chartData} margin={{ top: 5, right: 8, left: -8, bottom: 0 }}>
+                  <CartesianGrid stroke="#2a2a35" strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fill: "#55556a", fontSize: 10, fontFamily: "JetBrains Mono" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fill: "#55556a", fontSize: 10, fontFamily: "JetBrains Mono" }} tickLine={false} axisLine={false} tickFormatter={v => `$${v}`} width={55} />
+                  <Tooltip content={<Tooltip_ />} />
+                  <ReferenceLine y={ALERT_THRESHOLD} stroke="rgba(0,224,144,0.25)" strokeDasharray="4 4" label={{ value: "Alert", fill: "#00e090", fontSize: 9, fontFamily: "JetBrains Mono" }} />
+                  <Line type="monotone" dataKey="1st" stroke="#ffcc00" strokeWidth={2} dot={{ r: 3, fill: "#ffcc00", strokeWidth: 0 }} activeDot={{ r: 5, fill: "#ffcc00", strokeWidth: 0 }} connectNulls />
+                  <Line type="monotone" dataKey="2nd" stroke="#4da6ff" strokeWidth={2} dot={{ r: 3, fill: "#4da6ff", strokeWidth: 0 }} activeDot={{ r: 5, fill: "#4da6ff", strokeWidth: 0 }} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
+          )}
 
-            {/* Chart */}
-            {chartData.length > 1 && (
-              <div className="chart-section">
-                <div className="section-label">Price history — per adult (AUD)</div>
-                <ResponsiveContainer width="100%" height={240}>
-                  <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid stroke="#1e1e1e" strokeDasharray="3 3" />
-                    <XAxis dataKey="date" tick={{ fill: "#555", fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <YAxis tick={{ fill: "#555", fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: "11px", color: "#555", paddingTop: "16px" }} />
-                    <Line type="monotone" dataKey="1st pref" stroke="#f0c040" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#f0c040" }} />
-                    <Line type="monotone" dataKey="2nd pref" stroke="#4090f0" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#4090f0" }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            {/* History table */}
-            <div className="table-section">
-              <div className="table-header">
-                <div className="section-label" style={{ marginBottom: 0 }}>Price history log</div>
-              </div>
-              <div style={{ overflowX: "auto" }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Pref</th>
-                      <th>Outbound</th>
-                      <th>Return</th>
-                      <th>Airline</th>
-                      <th>Duration</th>
-                      <th>Stops</th>
-                      <th>Price</th>
-                      <th>Alert</th>
-                      <th>Book</th>
+          <div className="section">
+            <div className="section-header">
+              <div className="section-title">History Log</div>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Pref</th>
+                    <th>Out</th>
+                    <th>Return</th>
+                    <th>Days</th>
+                    <th>Airline</th>
+                    <th>Duration</th>
+                    <th>Stops</th>
+                    <th>Price</th>
+                    <th>Book</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i}>
+                      <td className="mono">{r.timestamp?.slice(0,10)}</td>
+                      <td><span className={`badge ${r.preference?.includes("1st") ? "p1" : "p2"}`}>{r.preference?.includes("1st") ? "1st" : "2nd"}</span></td>
+                      <td className="mono">{r.outbound}</td>
+                      <td className="mono">{r.return}</td>
+                      <td className="mono">{r.trip_days}</td>
+                      <td style={{color:"var(--text)"}}>{r.airline}</td>
+                      <td>{r.duration}</td>
+                      <td className="mono" style={{textAlign:"center"}}>{r.stops}</td>
+                      <td className={`price-cell ${parseFloat(r.price_aud) < ALERT_THRESHOLD ? "price-alert" : ""}`}>{fmt(r.price_aud)}</td>
+                      <td>{r.jetstar_link && <a className="tbl-link" href={r.jetstar_link} target="_blank" rel="noopener">Jetstar ↗</a>}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, i) => (
-                      <tr key={i}>
-                        <td className="mono" style={{ color: "#555", fontSize: 11 }}>{r.timestamp?.slice(0, 10)}</td>
-                        <td>
-                          <span className={`pref-badge ${r.preference?.includes("1st") ? "p1" : "p2"}`}>
-                            {r.preference?.includes("1st") ? "1st" : "2nd"}
-                          </span>
-                        </td>
-                        <td className="mono">{r.outbound}</td>
-                        <td className="mono">{r.return}</td>
-                        <td>{r.airline}</td>
-                        <td style={{ color: "#888" }}>{r.duration}</td>
-                        <td style={{ color: "#888", textAlign: "center" }}>{r.stops}</td>
-                        <td className="mono" style={{ color: parseFloat(r.price_aud) < ALERT_THRESHOLD ? "#40c080" : "#e8e8e8", fontWeight: 500 }}>
-                          {fmt(r.price_aud)}
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          {r.alert === "YES" && <span className="alert-dot" title="Below threshold" />}
-                        </td>
-                        <td>
-                          {r.jetstar_link && (
-                            <a className="book-link" href={r.jetstar_link} target="_blank" rel="noopener">Jetstar</a>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          </div>
 
-            <div className="status-bar">
-              <span className="status-dot" />
-              <span>Last updated {lastUpdated?.slice(0, 10) || "—"} · Updates daily at 08:30 ACST</span>
-            </div>
-          </>
-        )}
+          <div className="footer">
+            <span className="status-dot" />
+            <span>Last tracked {lastDate || "—"} · Data via Kiwi.com · Verify prices on Jetstar before booking</span>
+          </div>
+
+        </>)}
       </div>
     </>
   );
