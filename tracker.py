@@ -23,17 +23,32 @@ OUTBOUND_DATES = [
 RETURN_DATES = [
     "2027-04-16", "2027-04-17", "2027-04-18", "2027-04-19",
 ]
-MIN_TRIP_DAYS  = 14
+MIN_TRIP_DAYS = 14
 
 ALERT_THRESHOLD_PP = 450   # AUD per person
 MAX_PRICE_PP       = 1500  # AUD per person
 MAX_STOPS          = 1
+SKIP_SOURCES       = {"cached"}   # cached prices are stale estimates
 DELAY_BETWEEN_CALLS = 5
+
+# ── Jetstar deep link ─────────────────────────────────────────────────────────
+def jetstar_link(out: str, ret: str) -> str:
+    # Format: DDMMYY
+    d_out = datetime.strptime(out, "%Y-%m-%d").strftime("%d%m%y")
+    d_ret = datetime.strptime(ret, "%Y-%m-%d").strftime("%d%m%y")
+    return (
+        f"https://www.jetstar.com/au/en/flights?origin={ORIGIN}"
+        f"&destination={DESTINATION}"
+        f"&departure-date={d_out}"
+        f"&return-date={d_ret}"
+        f"&adult={ADULTS}&child=0&infant=0"
+        f"&trip-type=R&cabin-class=E"
+    )
 
 # ── CSV ───────────────────────────────────────────────────────────────────────
 FIELDNAMES = ["timestamp", "outbound", "return", "trip_days", "airline",
-              "duration", "stops", "total_aud", "per_person_aud",
-              "cheapest_source", "book_link", "alert"]
+              "duration", "stops", "per_person_aud", "total_aud",
+              "source", "jetstar_link", "alert"]
 
 def append_rows(rows):
     file_exists = os.path.exists(CSV_FILE)
@@ -50,7 +65,6 @@ def main():
     new_rows = []
     alerts   = []
 
-    # Build valid date combos (min 14 days apart)
     combos = [
         (out, ret)
         for out in OUTBOUND_DATES
@@ -90,51 +104,59 @@ def main():
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
 
-        filtered = [
-            i for i in items
-            if i.get("stops", 99) <= MAX_STOPS
-            and i.get("bestPrice") is not None
-            and (i.get("bestPrice") / TOTAL_PAX) <= MAX_PRICE_PP
-        ]
+        # Filter: skip cached sources, max stops, max price
+        filtered = []
+        for i in items:
+            sources = set(i.get("prices", {}).keys())
+            if sources <= SKIP_SOURCES:
+                continue   # only cached — skip
+            if i.get("stops", 99) > MAX_STOPS:
+                continue
+            if i.get("bestPrice") is None:
+                continue
+            # bestPrice is per person
+            if i.get("bestPrice") > MAX_PRICE_PP:
+                continue
+            filtered.append(i)
 
         if not filtered:
-            print(f"no results after filtering ({len(items)} raw)")
+            print(f"no results after filtering ({len(items)} raw, all cached/filtered)")
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
 
-        cheapest        = min(filtered, key=lambda x: x.get("bestPrice", float("inf")))
-        best_price      = cheapest.get("bestPrice")
-        airline         = cheapest.get("airline", "unknown")
-        duration        = cheapest.get("duration", "")
-        stops           = cheapest.get("stops", "")
-        cheapest_source = list(cheapest.get("prices", {}).keys())[0] if cheapest.get("prices") else "unknown"
-        book_link       = (cheapest.get("links") or {}).get("googleFlights", "")
+        cheapest   = min(filtered, key=lambda x: x.get("bestPrice", float("inf")))
+        best_price = cheapest.get("bestPrice")   # per person
+        airline    = cheapest.get("airline", "unknown")
+        duration   = cheapest.get("duration", "")
+        stops      = cheapest.get("stops", "")
+        sources    = ", ".join(cheapest.get("prices", {}).keys())
 
-        per_person = round(best_price / TOTAL_PAX, 2)
-        is_alert   = per_person < ALERT_THRESHOLD_PP
+        total      = round(best_price * TOTAL_PAX, 2)
+        is_alert   = best_price < ALERT_THRESHOLD_PP
         flag       = "YES" if is_alert else ""
+        jstar_link = jetstar_link(out, ret)
 
-        print(f"{airline} | {duration} | {stops} stop(s) | ${best_price:.0f} total (${per_person:.0f}/person) {flag}")
+        print(f"{airline} | {duration} | {stops} stop(s) | ${best_price:.0f}/person | ${total:.0f} total {flag}")
 
         new_rows.append({
-            "timestamp":       now,
-            "outbound":        out,
-            "return":          ret,
-            "trip_days":       trip_days,
-            "airline":         airline,
-            "duration":        duration,
-            "stops":           stops,
-            "total_aud":       f"{best_price:.2f}",
-            "per_person_aud":  f"{per_person:.2f}",
-            "cheapest_source": cheapest_source,
-            "book_link":       book_link,
-            "alert":           flag,
+            "timestamp":    now,
+            "outbound":     out,
+            "return":       ret,
+            "trip_days":    trip_days,
+            "airline":      airline,
+            "duration":     duration,
+            "stops":        stops,
+            "per_person_aud": f"{best_price:.2f}",
+            "total_aud":    f"{total:.2f}",
+            "source":       sources,
+            "jetstar_link": jstar_link,
+            "alert":        flag,
         })
 
         if is_alert:
             alerts.append(
                 f"  🔔 {airline} | {out} → {ret} ({trip_days}d) | "
-                f"${best_price:.0f} total (${per_person:.0f}/person)"
+                f"${best_price:.0f}/person | ${total:.0f} total"
             )
 
         time.sleep(DELAY_BETWEEN_CALLS)
@@ -143,7 +165,7 @@ def main():
         append_rows(new_rows)
         print(f"\n✓ Logged {len(new_rows)} price points to {CSV_FILE}")
     else:
-        print("\n⚠ No prices retrieved.")
+        print("\n⚠ No prices retrieved — all results filtered out (cached only).")
 
     if alerts:
         print("\n" + "="*55)
