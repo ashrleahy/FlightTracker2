@@ -24,19 +24,24 @@ jobs:
       - name: Install dependencies
         run: pip install apify-client
 
-      - name: Run tracker
+      - name: Run flight tracker
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
         run: python tracker.py
 
-      - name: Commit updated CSV
+      - name: Run hotel tracker
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: python hotel_tracker.py
+
+      - name: Commit updated CSVs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git stash || true
           git pull --rebase origin main || true
           git stash pop || true
-          git add flight_log.csv || true
+          git add flight_log.csv hotel_log.csv || true
           git diff --staged --quiet && echo "No changes to commit" || \
             git commit -m "💰 Price update: $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push origin main || echo "Nothing to push"
