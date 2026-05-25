@@ -1,6 +1,8 @@
 import os
 import csv
 import time
+import re
+import requests
 from datetime import datetime
 from apify_client import ApifyClient
 
@@ -10,7 +12,10 @@ ACTOR_ID     = "solidcode/booking-scraper"
 CSV_FILE     = "hotel_log.csv"
 CURRENCY     = "AUD"
 
-# Full Booking.com URLs with dates and guests baked in
+# Exchange rate IDR → AUD (approximate, updated periodically)
+# 1 AUD ≈ 10,500 IDR as of May 2026
+IDR_TO_AUD = 10500
+
 HOTELS = [
     {
         "name":     "Andaz Bali",
@@ -46,10 +51,37 @@ ALERT_THRESHOLDS = {
 
 DELAY_BETWEEN_CALLS = 10
 
+# ── Extract price from URL ────────────────────────────────────────────────────
+def extract_price_from_url(url: str, nights: int) -> tuple[float | None, float | None]:
+    """Extract IDR price from sr_pri_blocks URL param and convert to AUD."""
+    match = re.search(r'sr_pri_blocks=[^&]*?_(\d{6,})(?:&|$)', url)
+    if not match:
+        return None, None
+    idr_total = int(match.group(1))
+    if idr_total == 0:
+        return None, None
+    aud_total = round(idr_total / IDR_TO_AUD, 2)
+    aud_night = round(aud_total / nights, 2)
+    return aud_total, aud_night
+
+# ── Get live IDR→AUD rate ─────────────────────────────────────────────────────
+def get_idr_aud_rate() -> float:
+    try:
+        r = requests.get(
+            "https://api.frankfurter.app/latest?from=IDR&to=AUD",
+            timeout=5
+        )
+        rate = r.json()["rates"]["AUD"]
+        print(f"  Live IDR→AUD rate: {rate:.8f} (1 IDR = {rate:.8f} AUD)")
+        return 1 / rate  # we need IDR per AUD
+    except Exception:
+        print(f"  Could not fetch live rate, using fallback: {IDR_TO_AUD}")
+        return IDR_TO_AUD
+
 # ── CSV ───────────────────────────────────────────────────────────────────────
 FIELDNAMES = ["timestamp", "hotel", "location", "checkin", "checkout",
-              "nights", "price_total", "price_per_night", "rating",
-              "availability", "booking_url", "alert"]
+              "nights", "price_total_aud", "price_per_night_aud", "rating",
+              "price_source", "booking_url", "alert"]
 
 def append_rows(rows):
     file_exists = os.path.exists(CSV_FILE)
@@ -68,9 +100,13 @@ def main():
     print(f"Hotel tracker — {now}")
     print(f"2 adults + 1 child (age 9) | {CURRENCY}\n")
 
+    # Get live exchange rate
+    idr_per_aud = get_idr_aud_rate()
+    print()
+
     for hotel in HOTELS:
-        name    = hotel["name"]
-        nights  = hotel["nights"]
+        name   = hotel["name"]
+        nights = hotel["nights"]
 
         print(f"  [{name}] {hotel['checkin']} → {hotel['checkout']} ({nights} nights) ...", end=" ", flush=True)
 
@@ -94,36 +130,50 @@ def main():
             time.sleep(DELAY_BETWEEN_CALLS)
             continue
 
-        result      = items[0]
-        price_total = result.get("price")
-        rating      = result.get("rating")
-        avail       = result.get("available", True)
-        book_url    = result.get("bookingUrl") or hotel["url"]
+        result  = items[0]
+        rating  = result.get("rating")
+        returned_url = result.get("url") or hotel["url"]
 
-        price_night = round(float(price_total) / nights, 2) if price_total else None
+        # Try actor price field first, fall back to URL extraction
+        price_total = result.get("price")
+        price_source = "api"
+
+        if price_total:
+            price_night = round(float(price_total) / nights, 2)
+        else:
+            # Extract from URL param (IDR → AUD)
+            price_total, price_night = extract_price_from_url(hotel["url"], nights)
+            if price_total:
+                # Recalculate with live rate
+                match = re.search(r'sr_pri_blocks=[^&]*?_(\d{6,})(?:&|$)', hotel["url"])
+                if match:
+                    idr_total   = int(match.group(1))
+                    price_total = round(idr_total / idr_per_aud, 2)
+                    price_night = round(price_total / nights, 2)
+                price_source = "url-idr"
 
         threshold = ALERT_THRESHOLDS.get(name, 9999)
         is_alert  = price_night and float(price_night) < threshold
         flag      = "YES" if is_alert else ""
 
         if price_night:
-            print(f"${price_night:.0f}/night | ${price_total:.0f} total | rating: {rating} {flag}")
+            print(f"${price_night:.0f}/night | ${price_total:.0f} total | rating: {rating} | src: {price_source} {flag}")
         else:
-            print(f"no price yet (rating: {rating})")
+            print(f"no price (rating: {rating})")
 
         new_rows.append({
-            "timestamp":       now,
-            "hotel":           name,
-            "location":        hotel["location"],
-            "checkin":         hotel["checkin"],
-            "checkout":        hotel["checkout"],
-            "nights":          nights,
-            "price_total":     f"{float(price_total):.2f}" if price_total else "",
-            "price_per_night": f"{price_night:.2f}" if price_night else "",
-            "rating":          rating or "",
-            "availability":    "yes" if avail else "no",
-            "booking_url":     book_url,
-            "alert":           flag,
+            "timestamp":          now,
+            "hotel":              name,
+            "location":           hotel["location"],
+            "checkin":            hotel["checkin"],
+            "checkout":           hotel["checkout"],
+            "nights":             nights,
+            "price_total_aud":    f"{float(price_total):.2f}" if price_total else "",
+            "price_per_night_aud": f"{float(price_night):.2f}" if price_night else "",
+            "rating":             rating or "",
+            "price_source":       price_source if price_total else "none",
+            "booking_url":        returned_url,
+            "alert":              flag,
         })
 
         time.sleep(DELAY_BETWEEN_CALLS)
