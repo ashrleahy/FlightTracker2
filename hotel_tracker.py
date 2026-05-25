@@ -14,7 +14,7 @@ CURRENCY     = "AUD"
 
 # Exchange rate IDR → AUD (approximate, updated periodically)
 # 1 AUD ≈ 10,500 IDR as of May 2026
-IDR_TO_AUD = 10500
+IDR_TO_AUD = 12667
 
 HOTELS = [
     {
@@ -57,7 +57,7 @@ def extract_price_from_url(url: str, nights: int) -> tuple[float | None, float |
     match = re.search(r'sr_pri_blocks=[^&]*?_(\d{6,})(?:&|$)', url)
     if not match:
         return None, None
-    idr_total = int(match.group(1))
+    idr_total = int(match.group(1)) // 100  # IDR hundredths
     if idr_total == 0:
         return None, None
     aud_total = round(idr_total / IDR_TO_AUD, 2)
@@ -147,7 +147,7 @@ def main():
                 # Recalculate with live rate
                 match = re.search(r'sr_pri_blocks=[^&]*?_(\d{6,})(?:&|$)', hotel["url"])
                 if match:
-                    idr_total   = int(match.group(1))
+                    idr_total   = int(match.group(1)) // 100  # value is in IDR hundredths
                     price_total = round(idr_total / idr_per_aud, 2)
                     price_night = round(price_total / nights, 2)
                 price_source = "url-idr"
