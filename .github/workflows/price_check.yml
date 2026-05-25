@@ -22,7 +22,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install apify-client
+        run: pip install apify-client requests
 
       - name: Run flight tracker
         env:
