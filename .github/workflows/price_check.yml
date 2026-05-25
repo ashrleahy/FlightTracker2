@@ -24,10 +24,15 @@ jobs:
       - name: Install dependencies
         run: pip install apify-client requests
 
-      - name: Run flight tracker
+      - name: Run Bali flight tracker
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
         run: python tracker.py
+
+      - name: Run Fiji flight tracker
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: python fiji_tracker.py
 
       - name: Run hotel tracker
         env:
@@ -41,7 +46,7 @@ jobs:
           git stash || true
           git pull --rebase origin main || true
           git stash pop || true
-          git add flight_log.csv hotel_log.csv || true
+          git add flight_log.csv fiji_log.csv hotel_log.csv || true
           git diff --staged --quiet && echo "No changes to commit" || \
             git commit -m "💰 Price update: $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push origin main || echo "Nothing to push"
