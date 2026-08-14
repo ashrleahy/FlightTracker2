@@ -1,0 +1,2 @@
+timestamp,route,outbound,return,trip_days,airline,duration,stops,price_aud,source,search_link,alert
+2026-08-14T22:14:54Z,ADL→NAN,2027-07-03,2027-07-18,15,Virgin Australia Airlines + Fiji Airways,33h 25m,1,1082.00,"kiwi, cached",https://www.google.com/travel/flights?q=Flights+to+NAN+from+ADL+on+2027-07-03+returning+2027-07-18&curr=AUD,
